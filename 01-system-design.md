@@ -1,6 +1,5 @@
 # Garuda — AI-Assisted Observability and Incident Reasoning System
 
-
 **Owner:** Hrishabh Joshi (hrishabh.joshi@myntra.com)
 
 
