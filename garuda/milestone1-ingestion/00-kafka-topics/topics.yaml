@@ -1,0 +1,119 @@
+# Garuda Kafka topics (declarative spec)
+# Target cluster: chitragupta self-hosted Kafka, brokers 10.12.0.219-230:9092
+# Owner: Garuda team (hrishabh.joshi@myntra.com)
+#
+# This file is the source of truth. Apply via ./create-topics.sh.
+# All topics share the `garuda.` prefix to ease per-prefix retention/quota policy.
+#
+# Replication factor 3 = standard for production; the chitragupta cluster has 12 brokers
+# so quorum is comfortable. min.insync.replicas=2 means we tolerate one broker outage
+# without losing acks.
+
+topics:
+  # =========================================================================
+  # Phase 1 — Tier 1 + Tier 2 anomaly streams (this milestone)
+  # =========================================================================
+
+  - name: garuda.anomalies.tier1
+    partitions: 3
+    replication_factor: 3
+    config:
+      retention.ms: "604800000"            # 7 days
+      retention.bytes: "10737418240"       # 10 GiB safety cap
+      cleanup.policy: "delete"
+      min.insync.replicas: "2"
+      compression.type: "zstd"
+    purpose: "Deterministic anomalies from PrometheusRule CRs via Alertmanager bridge."
+
+  - name: garuda.anomalies.tier2
+    partitions: 3
+    replication_factor: 3
+    config:
+      retention.ms: "604800000"            # 7 days
+      retention.bytes: "10737418240"
+      cleanup.policy: "delete"
+      min.insync.replicas: "2"
+      compression.type: "zstd"
+    purpose: "ML-detected anomalies (STL + IsoForest) from Tier 2 worker."
+
+  # =========================================================================
+  # Phase 2 — declared now so the Kafka admin ask is one ticket; created later
+  # =========================================================================
+
+  - name: garuda.logs.parsed
+    partitions: 24
+    replication_factor: 3
+    config:
+      retention.ms: "86400000"             # 24h — the chitragupta-side topics already retain raw
+      retention.bytes: "536870912000"      # 500 GiB cap
+      cleanup.policy: "delete"
+      min.insync.replicas: "2"
+      compression.type: "zstd"
+    purpose: "Parsed + PII-masked platform/sysops logs from the Vector shaper."
+    create_in_milestone: 1b
+
+  - name: garuda.logs.dlq
+    partitions: 3
+    replication_factor: 3
+    config:
+      retention.ms: "259200000"            # 72h
+      retention.bytes: "10737418240"
+      cleanup.policy: "delete"
+      min.insync.replicas: "2"
+      compression.type: "zstd"
+    purpose: "Unparseable log lines from the shaper — manual triage."
+    create_in_milestone: 1b
+
+  - name: garuda.events.k8s
+    partitions: 6
+    replication_factor: 3
+    config:
+      retention.ms: "259200000"            # 72h
+      retention.bytes: "10737418240"
+      cleanup.policy: "delete"
+      min.insync.replicas: "2"
+      compression.type: "zstd"
+    purpose: "Kubernetes events from per-cluster event-exporter ConfigMap patch."
+    create_in_milestone: 2
+
+  - name: garuda.changes
+    partitions: 3
+    replication_factor: 3
+    config:
+      retention.ms: "604800000"            # 7d
+      retention.bytes: "10737418240"
+      cleanup.policy: "delete"
+      min.insync.replicas: "2"
+      compression.type: "zstd"
+    purpose: "Deployment + IaC change events from ArgoCD/Argo Rollouts/Cloud Build/Atlantis webhooks."
+    create_in_milestone: 2
+
+# =========================================================================
+# ACL plan (for the Kafka admin team)
+# =========================================================================
+#
+# Two principals:
+#
+# 1. garuda-producer  — used by the Alertmanager bridge and Tier 2 ML worker (this milestone),
+#                        later by the log shaper and webhook receiver.
+#    PERMISSIONS:
+#      WRITE    on topic prefix `garuda.`
+#      DESCRIBE on topic prefix `garuda.`
+#
+# 2. garuda-consumer  — used by Layer 2 correlation engine (next milestone) and the log shaper
+#                        (which is also a producer; reuse same principal or split per concern).
+#    PERMISSIONS:
+#      READ     on topic prefix `garuda.`
+#      DESCRIBE on topic prefix `garuda.`
+#      READ     on group prefix `garuda.`
+#
+# 3. garuda-log-shaper — read on the chitragupta service topics (filtered list below),
+#                        write on `garuda.logs.*` (covered by garuda-producer).
+#    PERMISSIONS:
+#      READ     on each topic in the platforms+sysops allowlist (provided separately as the
+#               output of the Zion-fetch CronJob — see 04-log-shaper-vector/).
+#      DESCRIBE on the same set
+#      READ     on group `garuda.log-shaper.v1`
+#
+# Auth: SASL/SCRAM-SHA-512 (preferred) or mTLS — defer to chitragupta team's existing posture.
+# Credentials delivered via Kubernetes Secret (External Secrets later when Azure Key Vault available).
