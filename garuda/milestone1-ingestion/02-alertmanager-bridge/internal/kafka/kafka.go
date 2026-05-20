@@ -1,28 +1,32 @@
 // Package kafka implements the Kafka producer for the Alertmanager bridge.
 //
 // Uses franz-go (no CGO) so we get a small static binary in the container
-// image. SASL/SCRAM-SHA-512 is the supported auth scheme; plaintext is
-// allowed only when KAFKA_AUTH_REQUIRED=false.
+// image. Supports SASL/PLAIN (Confluent Cloud) and SASL/SCRAM-SHA-512.
+// Plaintext is allowed only when KAFKA_AUTH_REQUIRED=false.
 package kafka
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/pkg/sasl/plain"
 	"github.com/twmb/franz-go/pkg/sasl/scram"
 )
 
 // Config holds producer wiring.
 type Config struct {
-	Brokers       []string // e.g. ["10.12.0.219:9092", ...]
+	Brokers       []string // e.g. ["broker.cloud:9092", ...]
 	Topic         string   // e.g. "garuda.anomalies.tier1"
 	SASLUsername  string   // empty = plaintext (only allowed when AuthRequired=false)
 	SASLPassword  string
-	AuthRequired  bool   // when true, refuse to start without SASL credentials
-	ClientID      string // optional; defaults to "garuda-am-bridge"
-	CompressionOK bool   // attempt zstd; fall back to none on broker rejection
+	SASLMechanism string   // "PLAIN" (Confluent Cloud) or "SCRAM-SHA-512"; defaults to PLAIN
+	AuthRequired  bool     // when true, refuse to start without SASL credentials
+	UseTLS        bool     // enable TLS (required for Confluent Cloud)
+	ClientID      string   // optional; defaults to "garuda-am-bridge"
+	CompressionOK bool     // attempt zstd; fall back to none on broker rejection
 }
 
 // Producer wraps a franz-go client with our delivery semantics:
@@ -46,6 +50,9 @@ func New(cfg Config) (*Producer, error) {
 	if cfg.ClientID == "" {
 		cfg.ClientID = "garuda-am-bridge"
 	}
+	if cfg.SASLMechanism == "" {
+		cfg.SASLMechanism = "PLAIN" // default for Confluent Cloud
+	}
 
 	opts := []kgo.Opt{
 		kgo.SeedBrokers(cfg.Brokers...),
@@ -59,12 +66,30 @@ func New(cfg Config) (*Producer, error) {
 		// the same partition (preserves ordering for the correlator).
 		kgo.RecordPartitioner(kgo.StickyKeyPartitioner(nil)),
 	}
+
+	// Enable TLS (required for Confluent Cloud and most managed Kafka)
+	if cfg.UseTLS {
+		opts = append(opts, kgo.DialTLSConfig(&tls.Config{}))
+	}
+
+	// Configure SASL authentication
 	if cfg.SASLUsername != "" {
-		mech := scram.Auth{
-			User: cfg.SASLUsername,
-			Pass: cfg.SASLPassword,
-		}.AsSha512Mechanism()
-		opts = append(opts, kgo.SASL(mech))
+		switch cfg.SASLMechanism {
+		case "PLAIN":
+			mech := plain.Auth{
+				User: cfg.SASLUsername,
+				Pass: cfg.SASLPassword,
+			}.AsMechanism()
+			opts = append(opts, kgo.SASL(mech))
+		case "SCRAM-SHA-512":
+			mech := scram.Auth{
+				User: cfg.SASLUsername,
+				Pass: cfg.SASLPassword,
+			}.AsSha512Mechanism()
+			opts = append(opts, kgo.SASL(mech))
+		default:
+			return nil, fmt.Errorf("kafka: unsupported SASL mechanism: %s", cfg.SASLMechanism)
+		}
 	}
 
 	client, err := kgo.NewClient(opts...)

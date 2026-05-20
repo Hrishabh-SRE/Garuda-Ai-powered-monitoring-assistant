@@ -40,11 +40,13 @@ func main() {
 	}
 
 	prod, err := kafka.New(kafka.Config{
-		Brokers:      cfg.KafkaBrokers,
-		Topic:        cfg.KafkaTopic,
-		SASLUsername: cfg.KafkaUser,
-		SASLPassword: cfg.KafkaPass,
-		AuthRequired: cfg.KafkaAuthReq,
+		Brokers:       cfg.KafkaBrokers,
+		Topic:         cfg.KafkaTopic,
+		SASLUsername:  cfg.KafkaUser,
+		SASLPassword:  cfg.KafkaPass,
+		SASLMechanism: cfg.KafkaSASLMech,
+		AuthRequired:  cfg.KafkaAuthReq,
+		UseTLS:        cfg.KafkaUseTLS,
 	})
 	if err != nil {
 		slog.Error("kafka producer init failed", "err", err)
