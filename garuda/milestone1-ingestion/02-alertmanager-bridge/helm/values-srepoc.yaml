@@ -1,0 +1,30 @@
+image:
+  repository: artifactory-ci.myntra.com/prodhub/garuda-alertmanager-bridge
+  tag: "0.1.7"
+
+imagePullSecrets:
+  - name: garuda-am-bridge-sedockerreg
+  - name: garuda-am-bridge-jfrogdockerreg
+  - name: garuda-am-bridge-dockerreg
+  - name: kafka-confluent-creds
+
+replicaCount: 1
+
+service:
+  type: ClusterIP    # Use ClusterIP for initial testing
+
+kafka:
+  brokers:
+    - "lkc-519qv2.domdpo4vkwy.centralindia.azure.confluent.cloud:9092"
+  topic: garuda.anomalies.tier1.test
+  authRequired: true
+  saslMechanism: "PLAIN"       # Confluent Cloud uses PLAIN
+  useTLS: true                # Confluent Cloud requires TLS
+  existingSecret: "kafka-confluent-creds"   # Secret with keys: username, password
+
+# Remove node constraints for testing
+nodeSelector: {}
+tolerations: [{key: app, operator: Equal, value: management, effect: NoSchedule}]
+
+pdb:
+  enabled: false    # Not needed with 1 replica
