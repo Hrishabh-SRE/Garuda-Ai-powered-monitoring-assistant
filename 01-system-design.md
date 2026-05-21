@@ -1,10 +1,7 @@
 # Garuda — AI-Assisted Observability and Incident Reasoning System
 
-**Status:** Design v2 — living document
 **Owner:** Hrishabh Joshi (hrishabh.joshi@myntra.com)
-**Last updated:** 2026-04-24
 
-**What changed in v2:** Layer 1 log ingestion rewritten after reading the chitragupta ansible repo. Garuda does not touch Fluent Bit configs or deploy new DaemonSets — it becomes a Kafka *consumer* of the existing chitragupta pipeline, filtered to the `platforms` and `sysops` departments. See `03-chitragupta-logging-findings.md` for ground truth.
 
 ---
 
