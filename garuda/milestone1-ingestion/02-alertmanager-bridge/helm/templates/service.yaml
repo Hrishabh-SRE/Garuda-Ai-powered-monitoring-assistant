@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "garuda-am-bridge.name" . }}
+  labels:
+    {{- include "garuda-am-bridge.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "garuda-am-bridge.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: webhook
+      port: {{ .Values.service.port }}
+      targetPort: webhook
+      protocol: TCP
+---
+# Separate ClusterIP for the metrics port — keeps the LoadBalancer surface
+# narrow (only :8080 is exposed off-cluster).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "garuda-am-bridge.name" . }}-metrics
+  labels:
+    {{- include "garuda-am-bridge.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "garuda-am-bridge.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: metrics
+      port: {{ .Values.service.metricsPort }}
+      targetPort: metrics
+      protocol: TCP

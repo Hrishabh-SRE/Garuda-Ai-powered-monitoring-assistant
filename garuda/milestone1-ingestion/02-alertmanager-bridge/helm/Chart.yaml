@@ -1,0 +1,14 @@
+apiVersion: v2
+name: garuda-alertmanager-bridge
+description: Garuda Alertmanager → Kafka bridge — receives webhook payloads, transforms to AnomalySignal envelopes, publishes to garuda.anomalies.tier1.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - garuda
+  - alertmanager
+  - kafka
+  - sre
+maintainers:
+  - name: Garuda team
+    email: hrishabh.joshi@myntra.com

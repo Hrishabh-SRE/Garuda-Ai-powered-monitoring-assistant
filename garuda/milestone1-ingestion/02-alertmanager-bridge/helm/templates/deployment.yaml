@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "garuda-am-bridge.name" . }}
+  labels:
+    {{- include "garuda-am-bridge.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "garuda-am-bridge.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "garuda-am-bridge.labels" . | nindent 8 }}
+    spec:
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    {{- include "garuda-am-bridge.selectorLabels" . | nindent 20 }}
+                topologyKey: kubernetes.io/hostname
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: bridge
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: []
+          ports:
+            - name: webhook
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          env:
+            - name: LISTEN_ADDR
+              value: ":8080"
+            - name: METRICS_ADDR
+              value: ":9090"
+            - name: KAFKA_BROKERS
+              value: {{ join "," .Values.kafka.brokers | quote }}
+            - name: KAFKA_TOPIC
+              value: {{ .Values.kafka.topic | quote }}
+            - name: KAFKA_AUTH_REQUIRED
+              value: {{ .Values.kafka.authRequired | quote }}
+            - name: KAFKA_SASL_MECHANISM
+              value: {{ .Values.kafka.saslMechanism | default "PLAIN" | quote }}
+            - name: KAFKA_USE_TLS
+              value: {{ .Values.kafka.useTLS | default .Values.kafka.authRequired | quote }}
+            {{- if .Values.kafka.existingSecret }}
+            - name: KAFKA_SASL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.kafka.existingSecret }}
+                  key: username
+            - name: KAFKA_SASL_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.kafka.existingSecret }}
+                  key: password
+            {{- end }}
+            {{- if .Values.webhook.existingSecret }}
+            - name: WEBHOOK_SHARED_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.webhook.existingSecret }}
+                  key: secret
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: webhook
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: webhook
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]
